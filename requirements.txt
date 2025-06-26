@@ -1,4 +1,4 @@
 fastapi
 uvicorn
 openai
-langchain
+langchain==0.1.14
