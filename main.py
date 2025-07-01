@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, Form
+from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse
 import os
 import openai
@@ -13,7 +13,7 @@ os.environ["OPENAI_API_KEY"] = openai.api_key
 # Initialize FastAPI
 app = FastAPI()
 
-# Set up the LangChain models
+# LangChain setup
 llm = OpenAI(temperature=0.6)
 
 prompt_name = PromptTemplate(
@@ -28,7 +28,6 @@ prompt_items = PromptTemplate(
 )
 restaurant_items_chain = LLMChain(llm=llm, prompt=prompt_items, output_key="items")
 
-# Combine chains
 chain = SequentialChain(
     chains=[restaurant_name_chain, restaurant_items_chain],
     input_variables=["cuisine"],
@@ -36,49 +35,63 @@ chain = SequentialChain(
     verbose=True
 )
 
-# ✅ JSON API route with error handling
-@app.post("/generate")
-async def generate(request: Request):
-    try:
-        body = await request.json()
-        cuisine = body.get("cuisine", "Italian")
-
-        # Run LangChain pipeline
-        result = chain({"cuisine": cuisine})
-        
-        return {
-            "restaurant_name": result.get("restaurant_name", "N/A"),
-            "menu_items": result.get("items", "N/A")
-        }
-    except Exception as e:
-        return {"error": str(e)}
-
-# Optional: simple UI form
+# Home page - input form
 @app.get("/", response_class=HTMLResponse)
-def root():
+async def index():
     return """
-    <h2>🍽️ LangChain Restaurant Generator</h2>
-    <form action="/web" method="post">
-        <label for="cuisine">Enter Cuisine:</label>
-        <input type="text" name="cuisine" value="Italian" />
-        <input type="submit" value="Generate" />
-    </form>
+    <html>
+        <head>
+            <title>Restaurant Menu Generator</title>
+        </head>
+        <body style='font-family: Arial; text-align: center;'>
+            <h1>🍽️ Restaurant Generator</h1>
+            <form action="/generate" method="post">
+                <label>Enter Cuisine Type:</label>
+                <input type="text" name="cuisine" placeholder="e.g. Indian, Italian" required/>
+                <br><br>
+                <input type="submit" value="Generate Menu"/>
+            </form>
+        </body>
+    </html>
     """
 
-@app.post("/web", response_class=HTMLResponse)
-async def web_view(cuisine: str = Form(...)):
+# POST route - generate & display table
+@app.post("/generate", response_class=HTMLResponse)
+async def generate_web(cuisine: str = Form(...)):
     try:
         result = chain({"cuisine": cuisine})
-        restaurant_name = result["restaurant_name"]
-        menu_items = result["items"].strip().split("\n")
+        restaurant_name = result["restaurant_name"].strip().replace('"', '')
+        raw_items = result["items"].strip().split("\n")
+
+        # Clean and convert to list
+        menu_items = []
+        for item in raw_items:
+            cleaned = item.strip()
+            if cleaned:
+                parts = cleaned.split(". ", 1)
+                if len(parts) == 2 and parts[0].isdigit():
+                    menu_items.append(parts[1].strip())
+                else:
+                    menu_items.append(cleaned)
+
+        # Generate HTML table
+        table_html = "<table border='1' style='margin:auto; border-collapse: collapse;'>"
+        table_html += "<tr><th>#</th><th>Menu Item</th></tr>"
+        for i, item in enumerate(menu_items, start=1):
+            table_html += f"<tr><td>{i}</td><td>{item}</td></tr>"
+        table_html += "</table>"
 
         return f"""
-        <h2>🍴 {restaurant_name}</h2>
-        <h3>📋 Menu:</h3>
-        <ul>
-            {''.join(f'<li>{item.strip()}</li>' for item in menu_items)}
-        </ul>
-        <a href="/">🔁 Try Another</a>
+        <html>
+            <head><title>Generated Menu</title></head>
+            <body style='font-family: Arial; text-align: center;'>
+                <h2>🏷️ {restaurant_name}</h2>
+                <h3>📋 Menu for {cuisine.title()} Cuisine</h3>
+                {table_html}
+                <br><br>
+                <a href="/">🔁 Generate Another</a>
+            </body>
+        </html>
         """
     except Exception as e:
-        return f"<p>Error: {str(e)}</p><a href='/'>🔁 Try Again</a>"
+        return f"<h3>Error: {str(e)}</h3><a href='/'>Back</a>"
