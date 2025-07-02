@@ -1,5 +1,5 @@
-from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Form, Request, Body
+from fastapi.responses import HTMLResponse, JSONResponse
 import os
 import openai
 from langchain.llms import OpenAI
@@ -35,7 +35,7 @@ chain = SequentialChain(
     verbose=True
 )
 
-# Home page - input form
+# ----------------- HTML Form Page -----------------
 @app.get("/", response_class=HTMLResponse)
 async def index():
     return """
@@ -55,7 +55,7 @@ async def index():
     </html>
     """
 
-# POST route - generate & display table
+# ----------------- HTML Form Handler -----------------
 @app.post("/generate", response_class=HTMLResponse)
 async def generate_web(cuisine: str = Form(...)):
     try:
@@ -95,3 +95,32 @@ async def generate_web(cuisine: str = Form(...)):
         """
     except Exception as e:
         return f"<h3>Error: {str(e)}</h3><a href='/'>Back</a>"
+
+# ----------------- JSON API Endpoint for Streamlit -----------------
+@app.post("/api/generate")
+async def generate_api(payload: dict = Body(...)):
+    try:
+        cuisine = payload.get("cuisine", "").strip().lower()
+
+        result = chain({"cuisine": cuisine})
+        restaurant_name = result["restaurant_name"].strip().replace('"', '')
+        raw_items = result["items"].strip().split("\n")
+
+        # Clean and convert to list
+        menu_items = []
+        for item in raw_items:
+            cleaned = item.strip()
+            if cleaned:
+                parts = cleaned.split(". ", 1)
+                if len(parts) == 2 and parts[0].isdigit():
+                    menu_items.append(parts[1].strip())
+                else:
+                    menu_items.append(cleaned)
+
+        return JSONResponse(content={
+            "restaurant_name": restaurant_name,
+            "menu_items": menu_items
+        })
+
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=500)
