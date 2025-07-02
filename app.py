@@ -1,25 +1,38 @@
-
 import streamlit as st
 import requests
 
-st.set_page_config(page_title="Restaurant Menu Generator")
-
 st.title("🍽️ Restaurant Menu Generator")
-cuisine = st.text_input("Enter a Cuisine:", value="Indian")
+
+cuisine = st.text_input("Enter a Cuisine:")
 
 if st.button("Generate Menu"):
-    with st.spinner("Generating menu..."):
+    if not cuisine:
+        st.warning("Please enter a cuisine type.")
+    else:
         try:
+            # ✅ Make sure you're calling the JSON endpoint (not the HTML one)
             response = requests.post(
-                "https://restaurant-generator-api.onrender.com/generate",
-                json={"cuisine": cuisine}
+                "https://restaurant-app-mbxe.onrender.com/api/generate",
+                json={"cuisine": cuisine},
+                timeout=15
             )
-            data = response.json()
+            response.raise_for_status()
 
-            st.subheader(f"Restaurant Name: 🍴 {data['restaurant_name'].strip()}")
-            st.markdown("### Menu Items:")
-            for i, item in enumerate(data['menu_items'].split("\n"), 1):
-                if item.strip():
-                    st.markdown(f"**{i}.** {item.strip()}")
-        except Exception as e:
-            st.error(f"Something went wrong: {e}")
+            # ✅ Try parsing JSON (protect against HTML error pages)
+            try:
+                data = response.json()
+            except ValueError:
+                st.error("Server returned invalid JSON. Check backend `/api/generate`.")
+                st.stop()
+
+            # ✅ Handle error from backend
+            if "error" in data:
+                st.error(f"Server Error: {data['error']}")
+            else:
+                st.subheader(f"🏷️ {data['restaurant_name']}")
+                st.write("### 📋 Menu")
+                for item in data["menu_items"]:
+                    st.write(f"• {item}")
+
+        except requests.exceptions.RequestException as e:
+            st.error(f"Network error: {e}")
