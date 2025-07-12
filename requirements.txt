@@ -4,3 +4,4 @@ openai
 langchain==0.1.14
 streamlit
 requests
+python-multipart
